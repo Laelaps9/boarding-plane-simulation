@@ -2,8 +2,6 @@ package main
 
 import(
 	"fmt"
-	"image"
-	"os"
 	"math/rand"
 	"time"
 
@@ -17,23 +15,40 @@ import(
 	"golang.org/x/image/font/basicfont"
 )
 
-func loadPicture(path string) (pixel.Picture, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-
-	defer file.Close()
-	img, _, err := image.Decode(file)
-	if err != nil {
-		return nil, err
-	}
-
-	return pixel.PictureDataFromImage(img), nil
+type Passenger struct {
+	PosX int
+	PosY int
+	Seat int
 }
 
-func run() {
-	y := 300.
+func generatePasses(size int) ([]Passenger) {
+	var passes [144]int
+	passengers := make([]Passenger, size)
+
+	// Create boarding passes
+	for i := range passes {
+		passes[i] = i
+	}
+	rand.Seed(time.Now().Unix())
+	rand.Shuffle(len(passes), func(i, j int) { passes[i], passes[j] = passes[j], passes[i]})
+
+	// Assign boarding passes
+	for i := range passengers {
+		passengers[i].Seat = passes[i]
+	}
+
+	return passengers
+}
+
+func getSeatColumn(pass Passenger) (int){
+	return pass.Seat / 6
+}
+
+func getSeatRow(pass Passenger) (int){
+	return pass.Seat % 6
+}
+
+func createWindow() (*pixelgl.Window) {
 	// Specify configuration window
 	cfg := pixelgl.WindowConfig {
 		Title: "Plane Boarding Simulator",
@@ -45,25 +60,18 @@ func run() {
 	if err != nil {
 		panic(err)
 	}
-
 	win.Clear(colornames.Black)
 
+	return win
+}
+
+func drawPlane() (*imdraw.IMDraw) {
 	plane := imdraw.New(nil)
+
 	plane.Color = colornames.Lightgray
 	plane.Push(pixel.V(0, 900))
 	plane.Push(pixel.V(1480, 480))
 	plane.Rectangle(0)
-
-	// Prepare font to print text on screen
-	txt := text.NewAtlas(basicfont.Face7x13, text.ASCII)
-
-	// Other labels 
-	others := text.New(pixel.V(55, 482), txt)
-	others.Color = colornames.Red
-	fmt.Fprintf(others, "Front")
-
-	others.Dot = pixel.V(1035, 482)
-	fmt.Fprintf(others, "Back")
 
 	plane.Color = colornames.Red
 
@@ -94,6 +102,21 @@ func run() {
 			plane.Rectangle(0)
 		}
 	}
+
+	return plane
+}
+
+func drawLabels() (*text.Text, *text.Text, *text.Text) {
+	// Prepare font to print text on screen
+	txt := text.NewAtlas(basicfont.Face7x13, text.ASCII)
+
+	// Other labels 
+	others := text.New(pixel.V(55, 482), txt)
+	others.Color = colornames.Red
+	fmt.Fprintf(others, "Front")
+
+	others.Dot = pixel.V(1035, 482)
+	fmt.Fprintf(others, "Back")
 
 	// Seats Columns
 	seatNumsTop := text.New(pixel.V(104, 870), txt)
@@ -132,33 +155,47 @@ func run() {
 		fmt.Fprintf(seatRows, labelString)
 	}
 
-	imd := imdraw.New(nil)
+	return seatNumsTop, seatRows, others
+}
+
+func run() {
+	win := createWindow()
+	plane := drawPlane()
+	seatNumsTop, seatRows, others := drawLabels()
+
+	passengers := generatePasses(5)
+	fmt.Println(passengers)
+
+	// Passengers
+	y := 503.
+	pass := imdraw.New(nil)
+	pass.Color = colornames.Limegreen
+
+	// Entrance 1 starting point (30, 503)
+
+	// Seats x = 52 + 60 * seatNumber
 
 	for !win.Closed() {	
-		imd.Clear()
-		//win.Clear(colornames.Black)
+		pass.Clear()
+		win.Clear(colornames.Black)
 		plane.Draw(win)
 
 		others.Draw(win, pixel.IM.Scaled(others.Orig, 1.3))
 		seatNumsTop.Draw(win, pixel.IM.Scaled(seatNumsTop.Orig, 1.8))
 		seatRows.Draw(win, pixel.IM.Scaled(seatRows.Orig, 3))
 
+		if y < 690 {
+			y += 2
+		}
+
 		// Passengers
-		imd.Color = colornames.Limegreen
-		imd.Push(pixel.V(163, y))
-		imd.Circle(10, 0)
-		imd.Draw(win)
+		pass.Push(pixel.V(30, y))
+		pass.Circle(15, 0)
+		pass.Draw(win)
 		win.Update()
 	}
 }
 
 func main() {
 	pixelgl.Run(run)
-	a := make([]int, 50)
-	for i := range a {
-		a[i] = i
-	}
-	rand.Seed(time.Now().Unix())
-	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i]})
-	fmt.Println(a[:5])
 }
