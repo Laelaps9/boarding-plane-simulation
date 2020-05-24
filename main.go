@@ -7,6 +7,7 @@ import (
 
 	_ "image/png"
 
+	"github.com/bradfitz/slice"
 	"github.com/faiface/pixel"
 	"github.com/faiface/pixel/imdraw"
 	"github.com/faiface/pixel/pixelgl"
@@ -15,13 +16,21 @@ import (
 	"golang.org/x/image/font/basicfont"
 )
 
-// State Masking
-const standing = 0
-const handlingBags = 1
-const sitting = 2
+// State masking
+const STANDING = 0
+const HANDLING_BAHS = 1
+const SITTING = 2
 
+// Order masking
+const RANDOM = 0
+const BACK_TO_FRONT = 1
+const FRONT_TO_BACK = 2
+const WINDOW_TO_AISLE = 3
+
+// Global varaibles
 var elapsed = 0
 var seated = 0
+var passengers [144]Passenger
 
 type Passenger struct {
 	PosX     int
@@ -33,11 +42,10 @@ type Passenger struct {
 	BagsDone bool
 }
 
-func generatePasses() []Passenger {
+func generatePasses(orderFlag int) {
 
 	var seats [144]int
 	rows := [6]string{"A", "B", "C", "D", "E", "F"}
-	passengers := make([]Passenger, 144)
 
 	// Create boarding passes
 	for i := range seats {
@@ -45,7 +53,6 @@ func generatePasses() []Passenger {
 	}
 
 	var j = 0
-	//var preQueue = len(passengers)
 
 	// Assign boarding passes
 	for i := range passengers {
@@ -54,13 +61,13 @@ func generatePasses() []Passenger {
 			j++
 		}
 
-		passengers[i].PosX = i * -1
+		passengers[i].PosX = 0
 		passengers[i].PosY = 0
 
 		passengers[i].SeatN = (i % 24) + 1
 		passengers[i].SeatL = rows[j]
 
-		passengers[i].State = standing
+		passengers[i].State = STANDING
 		passengers[i].Delay = 0
 		passengers[i].BagsDone = false
 	}
@@ -68,11 +75,56 @@ func generatePasses() []Passenger {
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(passengers), func(i, j int) { passengers[i], passengers[j] = passengers[j], passengers[i] })
 
-	return passengers
+	if orderFlag == BACK_TO_FRONT {
+		slice.Sort(passengers[:], func(i, j int) bool {
+			return passengers[i].SeatN > passengers[j].SeatN
+		})
+	} else if orderFlag == FRONT_TO_BACK {
+		slice.Sort(passengers[:], func(i, j int) bool {
+			return passengers[i].SeatN < passengers[j].SeatN
+		})
+	} else if orderFlag == WINDOW_TO_AISLE {
+		tmpPassengers := make([]Passenger, 144)
+		var i = 0
+
+		for j := range passengers {
+			if passengers[j].SeatL == "A" || passengers[j].SeatL == "F" {
+				tmpPassengers[i] = passengers[j]
+				passengers[j].SeatL = "X"
+				i++
+			}
+		}
+
+		for j := range passengers {
+			if passengers[j].SeatL == "B" || passengers[j].SeatL == "E" {
+				tmpPassengers[i] = passengers[j]
+				passengers[j].SeatL = "X"
+				i++
+			}
+		}
+
+		for j := range passengers {
+			if passengers[j].SeatL == "C" || passengers[j].SeatL == "D" {
+				tmpPassengers[i] = passengers[j]
+				passengers[j].SeatL = "X"
+				i++
+			}
+		}
+
+		for i := range passengers {
+			passengers[i] = tmpPassengers[i]
+		}
+
+	}
+
+	for i := range passengers {
+		passengers[i].PosX = i * -1
+	}
+
 }
 
 // Check if a specific coordinate is clear or occupied
-func isFree(passengers []Passenger, PosX int, PosY int) bool {
+func isFree(PosX int, PosY int) bool {
 	for i := range passengers {
 		if passengers[i].PosX == PosX && passengers[i].PosY == PosY {
 			return false
@@ -81,7 +133,7 @@ func isFree(passengers []Passenger, PosX int, PosY int) bool {
 	return true
 }
 
-func getPassengerInPosition(passengers []Passenger, PosX int, PosY int) Passenger {
+func getPassengerInPosition(PosX int, PosY int) Passenger {
 	for i := range passengers {
 		if passengers[i].PosX == PosX && passengers[i].PosY == PosY {
 			return passengers[i]
@@ -101,20 +153,19 @@ func swapPassengers(walker Passenger, obstructer Passenger) {
 	obstructer.PosX = walkerX
 	obstructer.PosY = walkerY
 
-	if obstructer.State == sitting {
-		obstructer.State = standing
+	if obstructer.State == SITTING {
+		obstructer.State = STANDING
 		seated--
 	}
 }
 
-func iterate(passengers []Passenger, size int) {
-
-	//matrix = 2d slice
+func board(size int) {
 
 	for {
 
 		fmt.Println(passengers[0:size])
 
+		// Finish once all passengers are seated
 		if seated == size {
 			break
 		}
@@ -123,26 +174,26 @@ func iterate(passengers []Passenger, size int) {
 
 			// Walk towards row number on the aisle
 			if passengers[i].PosX < passengers[i].SeatN {
-				if isFree(passengers, passengers[i].PosX+1, passengers[i].PosY) {
+				if isFree(passengers[i].PosX+1, passengers[i].PosY) {
 					passengers[i].PosX++
 				}
-				passengers[i].State = standing
+				passengers[i].State = STANDING
 
 			} else if passengers[i].PosX > passengers[i].SeatN {
-				if isFree(passengers, passengers[i].PosX+1, passengers[i].PosY) {
+				if isFree(passengers[i].PosX+1, passengers[i].PosY) {
 					passengers[i].PosX--
 				}
-				passengers[i].State = standing
+				passengers[i].State = STANDING
 
 			} else {
 
 				// Handle bags once row is approached
-				if passengers[i].BagsDone == false && passengers[i].State == standing {
-					passengers[i].State = handlingBags
+				if passengers[i].BagsDone == false && passengers[i].State == STANDING {
+					passengers[i].State = HANDLING_BAHS
 					passengers[i].Delay = 3
-				} else if passengers[i].Delay != 0 && passengers[i].State == handlingBags {
+				} else if passengers[i].Delay != 0 && passengers[i].State == HANDLING_BAHS {
 					passengers[i].Delay--
-				} else if passengers[i].Delay == 0 && passengers[i].State == handlingBags {
+				} else if passengers[i].Delay == 0 && passengers[i].State == HANDLING_BAHS {
 					passengers[i].BagsDone = true
 				}
 
@@ -150,92 +201,92 @@ func iterate(passengers []Passenger, size int) {
 				if passengers[i].BagsDone == true {
 
 					if passengers[i].SeatL == "A" && passengers[i].PosY > -3 {
-						if isFree(passengers, passengers[i].PosX, passengers[i].PosY-1) {
+						if isFree(passengers[i].PosX, passengers[i].PosY-1) {
 							passengers[i].PosY--
 						} else {
 							// Switch positions with obstructing poassenger
-							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY-1)
+							obstructer := getPassengerInPosition(passengers[i].PosX, passengers[i].PosY-1)
 							swapPassengers(passengers[i], obstructer)
 						}
 
 						// Sit down when seat if found
-					} else if passengers[i].SeatL == "A" && passengers[i].PosY == -3 && passengers[i].State != sitting {
-						passengers[i].State = sitting
+					} else if passengers[i].SeatL == "A" && passengers[i].PosY == -3 && passengers[i].State != SITTING {
+						passengers[i].State = SITTING
 						seated++
 					}
 
 					if passengers[i].SeatL == "B" && passengers[i].PosY > -2 {
-						if isFree(passengers, passengers[i].PosX, passengers[i].PosY-1) {
+						if isFree(passengers[i].PosX, passengers[i].PosY-1) {
 							passengers[i].PosY--
 						} else {
 							// Switch positions with obstructing poassenger
-							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY-1)
+							obstructer := getPassengerInPosition(passengers[i].PosX, passengers[i].PosY-1)
 							swapPassengers(passengers[i], obstructer)
 						}
 
 						// Sit down when seat if found
-					} else if passengers[i].SeatL == "B" && passengers[i].PosY == -2 && passengers[i].State != sitting {
-						passengers[i].State = sitting
+					} else if passengers[i].SeatL == "B" && passengers[i].PosY == -2 && passengers[i].State != SITTING {
+						passengers[i].State = SITTING
 						seated++
 					}
 
 					if passengers[i].SeatL == "C" && passengers[i].PosY > -1 {
-						if isFree(passengers, passengers[i].PosX, passengers[i].PosY-1) {
+						if isFree(passengers[i].PosX, passengers[i].PosY-1) {
 							passengers[i].PosY--
 						} else {
 							// Switch positions with obstructing poassenger
-							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY-1)
+							obstructer := getPassengerInPosition(passengers[i].PosX, passengers[i].PosY-1)
 							swapPassengers(passengers[i], obstructer)
 						}
 
 						// Sit down when seat if found
-					} else if passengers[i].SeatL == "C" && passengers[i].PosY == -1 && passengers[i].State != sitting {
-						passengers[i].State = sitting
+					} else if passengers[i].SeatL == "C" && passengers[i].PosY == -1 && passengers[i].State != SITTING {
+						passengers[i].State = SITTING
 						seated++
 					}
 
 					if passengers[i].SeatL == "D" && passengers[i].PosY < 1 {
-						if isFree(passengers, passengers[i].PosX, passengers[i].PosY+1) {
+						if isFree(passengers[i].PosX, passengers[i].PosY+1) {
 							passengers[i].PosY++
 						} else {
 							// Switch positions with obstructing poassenger
-							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY+1)
+							obstructer := getPassengerInPosition(passengers[i].PosX, passengers[i].PosY+1)
 							swapPassengers(passengers[i], obstructer)
 						}
 
 						// Sit down when seat if found
-					} else if passengers[i].SeatL == "D" && passengers[i].PosY == 1 && passengers[i].State != sitting {
-						passengers[i].State = sitting
+					} else if passengers[i].SeatL == "D" && passengers[i].PosY == 1 && passengers[i].State != SITTING {
+						passengers[i].State = SITTING
 						seated++
 					}
 
 					if passengers[i].SeatL == "E" && passengers[i].PosY < 2 {
-						if isFree(passengers, passengers[i].PosX, passengers[i].PosY+1) {
+						if isFree(passengers[i].PosX, passengers[i].PosY+1) {
 							passengers[i].PosY++
 						} else {
 							// Switch positions with obstructing poassenger
-							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY+1)
+							obstructer := getPassengerInPosition(passengers[i].PosX, passengers[i].PosY+1)
 							swapPassengers(passengers[i], obstructer)
 						}
 
 						// Sit down when seat if found
-					} else if passengers[i].SeatL == "E" && passengers[i].PosY == 2 && passengers[i].State != sitting {
-						passengers[i].State = sitting
+					} else if passengers[i].SeatL == "E" && passengers[i].PosY == 2 && passengers[i].State != SITTING {
+						passengers[i].State = SITTING
 						seated++
 					}
 
 					if passengers[i].SeatL == "F" && passengers[i].PosY < 3 {
-						if isFree(passengers, passengers[i].PosX, passengers[i].PosY+1) {
+						if isFree(passengers[i].PosX, passengers[i].PosY+1) {
 							passengers[i].PosY++
 						} else {
 							// Switch positions with obstructing poassenger
-							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY+1)
+							obstructer := getPassengerInPosition(passengers[i].PosX, passengers[i].PosY+1)
 							swapPassengers(passengers[i], obstructer)
 						}
 
 						// Sit down when seat if found
-					} else if passengers[i].SeatL == "F" && passengers[i].PosY == 3 && passengers[i].State != sitting {
-						passengers[i].State = sitting
+					} else if passengers[i].SeatL == "F" && passengers[i].PosY == 3 && passengers[i].State != SITTING {
+						passengers[i].State = SITTING
 						seated++
 					}
 				}
@@ -250,14 +301,6 @@ func iterate(passengers []Passenger, size int) {
 	fmt.Println("Elapsed:", elapsed, "s")
 
 }
-
-// func getSeatColumn(pass Passenger) int {
-// 	return pass.SeatN / 6
-// }
-
-// func getSeatRow(pass Passenger) int {
-// 	return pass.SeatN % 6
-// }
 
 func createWindow() *pixelgl.Window {
 	// Specify configuration window
@@ -374,9 +417,10 @@ func run() {
 	plane := drawPlane()
 	seatNumsTop, seatRows, others := drawLabels()
 
-	passengers := generatePasses()
+	generatePasses(WINDOW_TO_AISLE)
+	//fmt.Println(passengers[0:6])
 
-	iterate(passengers, 6)
+	board(6)
 
 	// Passengers
 	y := 503.
