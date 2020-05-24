@@ -1,6 +1,6 @@
 package main
 
-import(
+import (
 	"fmt"
 	"math/rand"
 	"time"
@@ -15,45 +15,256 @@ import(
 	"golang.org/x/image/font/basicfont"
 )
 
+// State Masking
+const standing = 0
+const handlingBags = 1
+const sitting = 2
+
+var elapsed = 0
+var seated = 0
+
 type Passenger struct {
-	PosX int
-	PosY int
-	Seat int
+	PosX     int
+	PosY     int
+	SeatN    int
+	SeatL    string
+	State    int
+	Delay    int
+	BagsDone bool
 }
 
-func generatePasses(size int) ([]Passenger) {
-	var passes [144]int
-	passengers := make([]Passenger, size)
+func generatePasses() []Passenger {
+
+	var seats [144]int
+	rows := [6]string{"A", "B", "C", "D", "E", "F"}
+	passengers := make([]Passenger, 144)
 
 	// Create boarding passes
-	for i := range passes {
-		passes[i] = i
+	for i := range seats {
+		seats[i] = i
 	}
-	rand.Seed(time.Now().Unix())
-	rand.Shuffle(len(passes), func(i, j int) { passes[i], passes[j] = passes[j], passes[i]})
+
+	var j = 0
+	//var preQueue = len(passengers)
 
 	// Assign boarding passes
 	for i := range passengers {
-		passengers[i].Seat = passes[i]
+
+		if i%24 == 0 && i != 0 {
+			j++
+		}
+
+		passengers[i].PosX = i * -1
+		passengers[i].PosY = 0
+
+		passengers[i].SeatN = (i % 24) + 1
+		passengers[i].SeatL = rows[j]
+
+		passengers[i].State = standing
+		passengers[i].Delay = 0
+		passengers[i].BagsDone = false
 	}
+
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(passengers), func(i, j int) { passengers[i], passengers[j] = passengers[j], passengers[i] })
 
 	return passengers
 }
 
-func getSeatColumn(pass Passenger) (int){
-	return pass.Seat / 6
+// Check if a specific coordinate is clear or occupied
+func isFree(passengers []Passenger, PosX int, PosY int) bool {
+	for i := range passengers {
+		if passengers[i].PosX == PosX && passengers[i].PosY == PosY {
+			return false
+		}
+	}
+	return true
 }
 
-func getSeatRow(pass Passenger) (int){
-	return pass.Seat % 6
+func getPassengerInPosition(passengers []Passenger, PosX int, PosY int) Passenger {
+	for i := range passengers {
+		if passengers[i].PosX == PosX && passengers[i].PosY == PosY {
+			return passengers[i]
+		}
+	}
+	var empty Passenger
+	return empty
 }
 
-func createWindow() (*pixelgl.Window) {
+func swapPassengers(walker Passenger, obstructer Passenger) {
+	walkerX := walker.PosX
+	walkerY := walker.PosY
+
+	walker.PosX = obstructer.PosX
+	walker.PosY = obstructer.PosY
+
+	obstructer.PosX = walkerX
+	obstructer.PosY = walkerY
+
+	if obstructer.State == sitting {
+		obstructer.State = standing
+		seated--
+	}
+}
+
+func iterate(passengers []Passenger, size int) {
+
+	//matrix = 2d slice
+
+	for {
+
+		fmt.Println(passengers[0:size])
+
+		if seated == size {
+			break
+		}
+
+		for i := range passengers {
+
+			// Walk towards row number on the aisle
+			if passengers[i].PosX < passengers[i].SeatN {
+				if isFree(passengers, passengers[i].PosX+1, passengers[i].PosY) {
+					passengers[i].PosX++
+				}
+				passengers[i].State = standing
+
+			} else if passengers[i].PosX > passengers[i].SeatN {
+				if isFree(passengers, passengers[i].PosX+1, passengers[i].PosY) {
+					passengers[i].PosX--
+				}
+				passengers[i].State = standing
+
+			} else {
+
+				// Handle bags once row is approached
+				if passengers[i].BagsDone == false && passengers[i].State == standing {
+					passengers[i].State = handlingBags
+					passengers[i].Delay = 3
+				} else if passengers[i].Delay != 0 && passengers[i].State == handlingBags {
+					passengers[i].Delay--
+				} else if passengers[i].Delay == 0 && passengers[i].State == handlingBags {
+					passengers[i].BagsDone = true
+				}
+
+				// Once bags are handle, attempt to sit down
+				if passengers[i].BagsDone == true {
+
+					if passengers[i].SeatL == "A" && passengers[i].PosY > -3 {
+						if isFree(passengers, passengers[i].PosX, passengers[i].PosY-1) {
+							passengers[i].PosY--
+						} else {
+							// Switch positions with obstructing poassenger
+							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY-1)
+							swapPassengers(passengers[i], obstructer)
+						}
+
+						// Sit down when seat if found
+					} else if passengers[i].SeatL == "A" && passengers[i].PosY == -3 && passengers[i].State != sitting {
+						passengers[i].State = sitting
+						seated++
+					}
+
+					if passengers[i].SeatL == "B" && passengers[i].PosY > -2 {
+						if isFree(passengers, passengers[i].PosX, passengers[i].PosY-1) {
+							passengers[i].PosY--
+						} else {
+							// Switch positions with obstructing poassenger
+							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY-1)
+							swapPassengers(passengers[i], obstructer)
+						}
+
+						// Sit down when seat if found
+					} else if passengers[i].SeatL == "B" && passengers[i].PosY == -2 && passengers[i].State != sitting {
+						passengers[i].State = sitting
+						seated++
+					}
+
+					if passengers[i].SeatL == "C" && passengers[i].PosY > -1 {
+						if isFree(passengers, passengers[i].PosX, passengers[i].PosY-1) {
+							passengers[i].PosY--
+						} else {
+							// Switch positions with obstructing poassenger
+							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY-1)
+							swapPassengers(passengers[i], obstructer)
+						}
+
+						// Sit down when seat if found
+					} else if passengers[i].SeatL == "C" && passengers[i].PosY == -1 && passengers[i].State != sitting {
+						passengers[i].State = sitting
+						seated++
+					}
+
+					if passengers[i].SeatL == "D" && passengers[i].PosY < 1 {
+						if isFree(passengers, passengers[i].PosX, passengers[i].PosY+1) {
+							passengers[i].PosY++
+						} else {
+							// Switch positions with obstructing poassenger
+							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY+1)
+							swapPassengers(passengers[i], obstructer)
+						}
+
+						// Sit down when seat if found
+					} else if passengers[i].SeatL == "D" && passengers[i].PosY == 1 && passengers[i].State != sitting {
+						passengers[i].State = sitting
+						seated++
+					}
+
+					if passengers[i].SeatL == "E" && passengers[i].PosY < 2 {
+						if isFree(passengers, passengers[i].PosX, passengers[i].PosY+1) {
+							passengers[i].PosY++
+						} else {
+							// Switch positions with obstructing poassenger
+							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY+1)
+							swapPassengers(passengers[i], obstructer)
+						}
+
+						// Sit down when seat if found
+					} else if passengers[i].SeatL == "E" && passengers[i].PosY == 2 && passengers[i].State != sitting {
+						passengers[i].State = sitting
+						seated++
+					}
+
+					if passengers[i].SeatL == "F" && passengers[i].PosY < 3 {
+						if isFree(passengers, passengers[i].PosX, passengers[i].PosY+1) {
+							passengers[i].PosY++
+						} else {
+							// Switch positions with obstructing poassenger
+							obstructer := getPassengerInPosition(passengers, passengers[i].PosX, passengers[i].PosY+1)
+							swapPassengers(passengers[i], obstructer)
+						}
+
+						// Sit down when seat if found
+					} else if passengers[i].SeatL == "F" && passengers[i].PosY == 3 && passengers[i].State != sitting {
+						passengers[i].State = sitting
+						seated++
+					}
+				}
+
+			}
+
+		}
+
+		elapsed++
+	}
+
+	fmt.Println("Elapsed:", elapsed, "s")
+
+}
+
+// func getSeatColumn(pass Passenger) int {
+// 	return pass.SeatN / 6
+// }
+
+// func getSeatRow(pass Passenger) int {
+// 	return pass.SeatN % 6
+// }
+
+func createWindow() *pixelgl.Window {
 	// Specify configuration window
-	cfg := pixelgl.WindowConfig {
-		Title: "Plane Boarding Simulator",
+	cfg := pixelgl.WindowConfig{
+		Title:  "Plane Boarding Simulator",
 		Bounds: pixel.R(0, 0, 1430, 900),
-		VSync: true,
+		VSync:  true,
 	}
 	// Create a new window
 	win, err := pixelgl.NewWindow(cfg)
@@ -65,7 +276,7 @@ func createWindow() (*pixelgl.Window) {
 	return win
 }
 
-func drawPlane() (*imdraw.IMDraw) {
+func drawPlane() *imdraw.IMDraw {
 	plane := imdraw.New(nil)
 
 	plane.Color = colornames.Lightgray
@@ -89,16 +300,16 @@ func drawPlane() (*imdraw.IMDraw) {
 	plane.Color = colornames.Darkgray
 	for i := 0; i < 3; i++ {
 		for j := 1; j <= 24; j++ {
-			plane.Push(pixel.V(float64(52 * j + 40), float64(860 - 50 * i)))
-			plane.Push(pixel.V(float64(52 * j + 80), float64(820 - 50 * i)))
+			plane.Push(pixel.V(float64(52*j+40), float64(860-50*i)))
+			plane.Push(pixel.V(float64(52*j+80), float64(820-50*i)))
 			plane.Rectangle(0)
 		}
 	}
-	
+
 	for i := 0; i < 3; i++ {
 		for j := 1; j <= 24; j++ {
-			plane.Push(pixel.V(float64(52 * j + 40), float64(660 - 50 * i)))
-			plane.Push(pixel.V(float64(52 * j + 80), float64(620 - 50 * i)))
+			plane.Push(pixel.V(float64(52*j+40), float64(660-50*i)))
+			plane.Push(pixel.V(float64(52*j+80), float64(620-50*i)))
 			plane.Rectangle(0)
 		}
 	}
@@ -110,7 +321,7 @@ func drawLabels() (*text.Text, *text.Text, *text.Text) {
 	// Prepare font to print text on screen
 	txt := text.NewAtlas(basicfont.Face7x13, text.ASCII)
 
-	// Other labels 
+	// Other labels
 	others := text.New(pixel.V(55, 482), txt)
 	others.Color = colornames.Red
 	fmt.Fprintf(others, "Front")
@@ -132,26 +343,26 @@ func drawLabels() (*text.Text, *text.Text, *text.Text) {
 	// Add labels for seat columns
 	for i := 0; i < 24; i++ {
 		if i <= 8 {
-			charOrigin = pixel.V(float64(105 + i * 29), 870)
+			charOrigin = pixel.V(float64(105+i*29), 870)
 		} else {
-			charOrigin = pixel.V(float64(100 + i * 29), 870)
+			charOrigin = pixel.V(float64(100+i*29), 870)
 		}
-		
+
 		seatNumsTop.Dot = charOrigin
-		labelString = fmt.Sprintf("%d", i + 1)
+		labelString = fmt.Sprintf("%d", i+1)
 		fmt.Fprintf(seatNumsTop, labelString)
 	}
 
 	// Add labels for seat rows
 	for i := 0; i < 6; i++ {
 		if i < 3 {
-			charOrigin = pixel.V(65, float64(827 - i * 17))
+			charOrigin = pixel.V(65, float64(827-i*17))
 		} else {
-			charOrigin = pixel.V(65, float64(811 - i * 17))
+			charOrigin = pixel.V(65, float64(811-i*17))
 		}
 
 		seatRows.Dot = charOrigin
-		labelString = fmt.Sprintf("%c", 70 - i)
+		labelString = fmt.Sprintf("%c", 70-i)
 		fmt.Fprintf(seatRows, labelString)
 	}
 
@@ -163,8 +374,9 @@ func run() {
 	plane := drawPlane()
 	seatNumsTop, seatRows, others := drawLabels()
 
-	passengers := generatePasses(5)
-	fmt.Println(passengers)
+	passengers := generatePasses()
+
+	iterate(passengers, 6)
 
 	// Passengers
 	y := 503.
@@ -175,7 +387,7 @@ func run() {
 
 	// Seats x = 52 + 60 * seatNumber
 
-	for !win.Closed() {	
+	for !win.Closed() {
 		pass.Clear()
 		win.Clear(colornames.Black)
 		plane.Draw(win)
