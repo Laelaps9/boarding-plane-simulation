@@ -194,7 +194,7 @@ func swapPassengers(walker int, obstructer int) {
 	passengers[obstructer].Delay += 4
 }
 
-func board(size int, win *pixelgl.Window, plane, draw *imdraw.IMDraw, seatNumsTop, seatRows, others *text.Text) {
+func board(size int, win *pixelgl.Window, plane, draw *imdraw.IMDraw, seatNumsTop, seatRows, others, results *text.Text) {
 
 	for {
 
@@ -336,7 +336,8 @@ func board(size int, win *pixelgl.Window, plane, draw *imdraw.IMDraw, seatNumsTo
 			}
 
 		}
-		printDrawings(win, plane, seatNumsTop, seatRows, others)
+
+		printDrawings(win, plane, seatNumsTop, seatRows, others, results)
 		draw.Clear()
 		drawPassengers(passengers[0:size], win, draw)
 
@@ -355,6 +356,10 @@ func board(size int, win *pixelgl.Window, plane, draw *imdraw.IMDraw, seatNumsTo
 
 	//fmt.Println("Swap Delays:", swapDelays, "s")
 	fmt.Println("Elapsed:", elapsed/60, "min")
+	fmt.Fprintf(results, "Total Passengers: %d \t Elapsed time: %d min", size, (elapsed/60))
+	printDrawings(win, plane, seatNumsTop, seatRows, others, results)
+	draw.Clear()
+	drawPassengers(passengers[0:size], win, draw)
 
 }
 
@@ -362,7 +367,7 @@ func createWindow() *pixelgl.Window {
 	// Specify configuration window
 	cfg := pixelgl.WindowConfig{
 		Title:  "Plane Boarding Simulator",
-		Bounds: pixel.R(0, 0, 1430, 900),
+		Bounds: pixel.R(0, 400, 1430, 900),
 		VSync:  true,
 	}
 	// Create a new window
@@ -416,7 +421,7 @@ func drawPlane() *imdraw.IMDraw {
 	return plane
 }
 
-func drawLabels() (*text.Text, *text.Text, *text.Text) {
+func drawLabels() (*text.Text, *text.Text, *text.Text, *text.Text) {
 	// Prepare font to print text on screen
 	txt := text.NewAtlas(basicfont.Face7x13, text.ASCII)
 
@@ -435,6 +440,10 @@ func drawLabels() (*text.Text, *text.Text, *text.Text) {
 	// Seat Rows
 	seatRows := text.New(pixel.V(65, 827), txt)
 	seatRows.Color = colornames.Darkblue
+
+	// Results
+	results := text.New(pixel.V(715, 450), txt)
+	results.Color = colornames.White
 
 	labelString := ""
 	charOrigin := pixel.V(105, 870)
@@ -465,7 +474,7 @@ func drawLabels() (*text.Text, *text.Text, *text.Text) {
 		fmt.Fprintf(seatRows, labelString)
 	}
 
-	return seatNumsTop, seatRows, others
+	return seatNumsTop, seatRows, others, results
 }
 
 func drawPassengers(passengers []Passenger, win *pixelgl.Window, draw *imdraw.IMDraw) {
@@ -480,12 +489,13 @@ func drawPassengers(passengers []Passenger, win *pixelgl.Window, draw *imdraw.IM
 	//time.Sleep(time.Second / 2)
 }
 
-func printDrawings(win *pixelgl.Window, plane *imdraw.IMDraw, seatNumsTop, seatRows, others *text.Text) {
+func printDrawings(win *pixelgl.Window, plane *imdraw.IMDraw, seatNumsTop, seatRows, others, results *text.Text) {
 	win.Clear(colornames.Black)
 	plane.Draw(win)
 	seatNumsTop.Draw(win, pixel.IM.Scaled(seatNumsTop.Orig, 1.8))
 	seatRows.Draw(win, pixel.IM.Scaled(seatRows.Orig, 3))
 	others.Draw(win, pixel.IM.Scaled(others.Orig, 1.3))
+	results.Draw(win, pixel.IM.Scaled(results.Orig, 2))
 }
 
 func run() {
@@ -504,7 +514,7 @@ func run() {
 
 	win := createWindow()
 	plane := drawPlane()
-	seatNumsTop, seatRows, others := drawLabels()
+	seatNumsTop, seatRows, others, results := drawLabels()
 
 	generatePasses(size, order)
 
@@ -512,7 +522,7 @@ func run() {
 	pass := imdraw.New(nil)
 	pass.Color = colornames.Limegreen
 
-	board(size, win, plane, pass, seatNumsTop, seatRows, others)
+	board(size, win, plane, pass, seatNumsTop, seatRows, others, results)
 	for !win.Closed() {
 
 	}
