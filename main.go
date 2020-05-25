@@ -18,7 +18,7 @@ import (
 
 // State masking
 const STANDING = 0
-const HANDLING_BAHS = 1
+const HANDLING_BAGS = 1
 const SITTING = 2
 
 // Order masking
@@ -159,11 +159,13 @@ func swapPassengers(walker Passenger, obstructer Passenger) {
 	}
 }
 
-func board(size int) {
+func board(size int, win *pixelgl.Window, plane, draw *imdraw.IMDraw, seatNumsTop, seatRows, others *text.Text) {
+	boardingPassengers := passengers[:size]
 
 	for {
 
 		fmt.Println(passengers[0:size])
+		fmt.Println(boardingPassengers)
 
 		// Finish once all passengers are seated
 		if seated == size {
@@ -189,11 +191,11 @@ func board(size int) {
 
 				// Handle bags once row is approached
 				if passengers[i].BagsDone == false && passengers[i].State == STANDING {
-					passengers[i].State = HANDLING_BAHS
+					passengers[i].State = HANDLING_BAGS
 					passengers[i].Delay = 3
-				} else if passengers[i].Delay != 0 && passengers[i].State == HANDLING_BAHS {
+				} else if passengers[i].Delay != 0 && passengers[i].State == HANDLING_BAGS {
 					passengers[i].Delay--
-				} else if passengers[i].Delay == 0 && passengers[i].State == HANDLING_BAHS {
+				} else if passengers[i].Delay == 0 && passengers[i].State == HANDLING_BAGS {
 					passengers[i].BagsDone = true
 				}
 
@@ -294,6 +296,9 @@ func board(size int) {
 			}
 
 		}
+		printDrawings(win, plane, seatNumsTop, seatRows, others)
+		draw.Clear()
+		drawPassengers(passengers[0:size], win, draw)
 
 		elapsed++
 	}
@@ -412,44 +417,39 @@ func drawLabels() (*text.Text, *text.Text, *text.Text) {
 	return seatNumsTop, seatRows, others
 }
 
+func drawPassengers(passengers []Passenger, win *pixelgl.Window, draw *imdraw.IMDraw) {
+	for i := range passengers {
+		if passengers[i].PosX >= 0 {
+			draw.Push(pixel.V(float64(52 * (passengers[i].PosX) + 60), float64(690+passengers[i].PosY*50))) 
+			draw.Circle(20, 0)
+		}
+	}
+	draw.Draw(win)
+	win.Update()
+}
+
+func printDrawings(win *pixelgl.Window, plane *imdraw.IMDraw, seatNumsTop, seatRows, others *text.Text) {
+	win.Clear(colornames.Black)
+	plane.Draw(win)
+	seatNumsTop.Draw(win, pixel.IM.Scaled(seatNumsTop.Orig, 1.8))
+	seatRows.Draw(win, pixel.IM.Scaled(seatRows.Orig, 3))
+	others.Draw(win, pixel.IM.Scaled(others.Orig, 1.3))
+}
+
 func run() {
 	win := createWindow()
 	plane := drawPlane()
 	seatNumsTop, seatRows, others := drawLabels()
 
 	generatePasses(WINDOW_TO_AISLE)
-	//fmt.Println(passengers[0:6])
-
-	board(6)
-
 	// Passengers
-	y := 503.
 	pass := imdraw.New(nil)
 	pass.Color = colornames.Limegreen
 
-	// Entrance 1 starting point (30, 503)
-
-	// Seats x = 52 + 60 * seatNumber
-
+	board(130, win, plane, pass, seatNumsTop, seatRows, others)
 	for !win.Closed() {
-		pass.Clear()
-		win.Clear(colornames.Black)
-		plane.Draw(win)
 
-		others.Draw(win, pixel.IM.Scaled(others.Orig, 1.3))
-		seatNumsTop.Draw(win, pixel.IM.Scaled(seatNumsTop.Orig, 1.8))
-		seatRows.Draw(win, pixel.IM.Scaled(seatRows.Orig, 3))
-
-		if y < 690 {
-			y += 2
-		}
-
-		// Passengers
-		pass.Push(pixel.V(30, y))
-		pass.Circle(15, 0)
-		pass.Draw(win)
-		win.Update()
-	}
+	}	
 }
 
 func main() {
