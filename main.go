@@ -352,7 +352,7 @@ func board(size int, win *pixelgl.Window, plane, draw *imdraw.IMDraw, seatNumsTo
 	}
 
 	elapsed += swapDelays
-	elapsed *= 2
+	//elapsed *= 2
 
 	//fmt.Println("Swap Delays:", swapDelays, "s")
 	fmt.Println("Elapsed:", elapsed/60, "min")
